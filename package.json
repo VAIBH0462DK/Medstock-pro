@@ -2,6 +2,9 @@
   "name": "medstock-fresh",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -9,9 +12,13 @@
     "@supabase/supabase-js": "^2.39.0",
     "recharts": "^2.10.0"
   },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "eslint-plugin-react-hooks": "^4.6.0"
+  },
   "scripts": {
     "start": "react-scripts start",
-    "build": "CI=false react-scripts build"
+    "build": "cross-env CI=false react-scripts build"
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],
