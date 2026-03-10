@@ -1,26 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// App.js  —  MedStock Pro  (Mobile-optimised edition)
+// App.js  —  MedStock Pro  (Homepage + Routing edition)
 //
-// CHANGES vs original:
-//  1. DUPLICATE IMPORT FIXED — useState/useEffect/useRef were imported twice
-//  2. PHASED DATA LOADING — masters load first (critical path), sales+purchases
-//     load after in background so POS is usable in ~half the time
-//  3. INVENTORY MEMOIZED — useMemo instead of recalculating on every keystroke
-//  4. HEAVY COMPONENTS MEMOIZED — Analytics, ExpiryTracker, ReorderSuggestions
-//     wrapped in React.memo; only re-render when their props actually change
-//  5. DEFERRED MOUNTING — Expiry / Reorder / Analytics only mount on first visit
-//     (visited-gate pattern); saves DOM work and avoids running heavy date math
-//     on page load when the user just wants POS
-//  6. RECHARTS LAZY — charts load via dynamic import() so the ~180 kB bundle
-//     doesn't block initial paint; stat cards appear instantly
-//  7. SIDEBAR OVERLAY BUG FIXED — was always display:none even when open
+// CHANGES vs previous version:
+//  1. HOMEPAGE ADDED — new / route shows HomePage component
+//  2. REACT ROUTER ADDED — BrowserRouter with Routes for /, /login, /signup, /dashboard
+//  3. LOGIN/SIGNUP ROUTES — separate routes instead of AuthGate toggle
+//  4. DASHBOARD PROTECTED — redirects to /login if not authenticated
+//  5. vercel.json needed — add it to project root (instructions at bottom)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef, useMemo, memo, Suspense } from "react";
+import { useState, useEffect, useRef, useMemo, memo } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import { useAuth } from "./AuthContext";
 import Login from "./Login";
 import Signup from "./Signup";
+import HomePage from "./HomePage"; // ← NEW
 
 // ═══════════════════════════════════════════════════════════
 // CONSTANTS
@@ -71,7 +66,6 @@ const Btn = ({ children, onClick, color="#0284c7", disabled, small, danger, styl
   </button>
 );
 
-// Spinner shown while deferred section loads
 function SectionLoader() {
   return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",
@@ -310,9 +304,8 @@ function SettingsModal({ onClose, shopInfo, setShopInfo }) {
 // ═══════════════════════════════════════════════════════════
 const Analytics = memo(function Analytics({ sales, purchases }) {
   const [period, setPeriod] = useState("6m");
-  const [RC,     setRC]     = useState(null); // recharts loaded on first render
+  const [RC,     setRC]     = useState(null);
 
-  // Load recharts only when this component first mounts (Analytics tab visited)
   useEffect(() => {
     import("recharts").then(mod => setRC(mod));
   }, []);
@@ -329,16 +322,16 @@ const Analytics = memo(function Analytics({ sales, purchases }) {
   const monthlyData=months.map(m=>{
     const mSales    =validSales.filter(s=>(s.saleDate||"").startsWith(m.key));
     const mPurchases=purchases.filter(p=>(p.purchaseDate||"").startsWith(m.key));
-    const revenue   =mSales.reduce((s,r)    =>s+parseFloat(r.netTotal||0),0);
+    const revenue   =mSales.reduce((s,r)=>s+parseFloat(r.netTotal||0),0);
     const cost      =mPurchases.reduce((s,p)=>s+parseFloat(p.totalAmount||0),0);
-    const gst       =mSales.reduce((s,r)    =>s+parseFloat(r.gstTotal||0),0);
+    const gst       =mSales.reduce((s,r)=>s+parseFloat(r.gstTotal||0),0);
     return{month:m.label,revenue:+revenue.toFixed(2),cost:+cost.toFixed(2),profit:+(revenue-cost).toFixed(2),gst:+gst.toFixed(2)};
   });
 
   const totalRevenue=validSales.reduce((s,r)=>s+parseFloat(r.netTotal||0),0);
-  const totalCost   =purchases.reduce((s,p) =>s+parseFloat(p.totalAmount||0),0);
+  const totalCost   =purchases.reduce((s,p)=>s+parseFloat(p.totalAmount||0),0);
   const totalGST    =validSales.reduce((s,r)=>s+parseFloat(r.gstTotal||0),0);
-  const totalReturns=returns.reduce((s,r)   =>s+parseFloat(r.netTotal||0),0);
+  const totalReturns=returns.reduce((s,r)=>s+parseFloat(r.netTotal||0),0);
 
   const medSales={};
   validSales.forEach(s=>{(s.items||[]).forEach(i=>{if(!medSales[i.medicineName])medSales[i.medicineName]={qty:0,revenue:0};medSales[i.medicineName].qty+=parseFloat(i.quantity||0);medSales[i.medicineName].revenue+=parseFloat(i.amount||0);});});
@@ -369,8 +362,6 @@ const Analytics = memo(function Analytics({ sales, purchases }) {
           ))}
         </div>
       </div>
-
-      {/* Stat cards render immediately — no dependency on recharts */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:24}}>
         <StatCard icon="💰" label="Total Revenue"   val={fmtMoney(totalRevenue)}           color="#0284c7"/>
         <StatCard icon="📦" label="Total Purchases" val={fmtMoney(totalCost)}              color="#d97706"/>
@@ -378,8 +369,6 @@ const Analytics = memo(function Analytics({ sales, purchases }) {
         <StatCard icon="🏛️" label="GST Collected"   val={fmtMoney(totalGST)}               color="#7c3aed"/>
         <StatCard icon="↩️" label="Returns Value"   val={fmtMoney(totalReturns)}           color="#dc2626"/>
       </div>
-
-      {/* Charts appear once recharts has loaded */}
       {!RC ? <SectionLoader/> : (()=>{
         const{LineChart,Line,BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,
               ResponsiveContainer,PieChart,Pie,Cell,Legend}=RC;
@@ -531,12 +520,13 @@ const ReorderSuggestions = memo(function ReorderSuggestions({ inventory }) {
 });
 
 // ═══════════════════════════════════════════════════════════
-// AUTH GATE
+// AUTH GATE — now accepts mode prop (login or signup)
 // ═══════════════════════════════════════════════════════════
-function AuthGate() {
-  const [page,setPage]=useState("login");
-  if(page==="signup") return <Signup onSwitchToLogin={()=>setPage("login")}/>;
-  return <Login onSwitchToSignup={()=>setPage("signup")}/>;
+function AuthGate({ mode = "login" }) {
+  const navigate = useNavigate();
+  if (mode === "signup")
+    return <Signup onSwitchToLogin={() => navigate("/login")} />;
+  return <Login onSwitchToSignup={() => navigate("/signup")} />;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -571,7 +561,6 @@ function TrialExpired() {
 // ═══════════════════════════════════════════════════════════
 function Dashboard() {
   const {user,shopProfile,signOut}=useAuth();
-  const role="admin";
 
   const [sheet,        setSheet]        = useState("dashboard");
   const [masters,      setMasters]      = useState([]);
@@ -585,7 +574,6 @@ function Dashboard() {
   const [shopInfo,     setShopInfo]     = useState({name:"",address:"",phone:"",gstin:""});
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
 
-  // visited-gate: heavy sections only mount once, on first navigation to them
   const [visited, setVisited] = useState({dashboard:true});
   const visit = (tab) => { setSheet(tab); setVisited(v=>({...v,[tab]:true})); };
 
@@ -607,9 +595,6 @@ function Dashboard() {
   const [sSearch, setSSearch] = useState("");
   const [pSearch, setPSearch] = useState("");
 
-  // ─── PHASED DATA LOAD ────────────────────────────────────────────────────
-  // Phase 1 (critical): shop settings + masters → UI usable immediately
-  // Phase 2 (background): sales + purchases → loads after first paint
   const load = async () => {
     setLoading(true); setDbError("");
     try {
@@ -617,28 +602,22 @@ function Dashboard() {
         supabase.from("shop_settings").select("*").eq("owner_id",user.id).maybeSingle(),
         supabase.from("masters").select("*").eq("owner_id",user.id).order("name"),
       ]);
-
       if(settingsRes.data) {
         setShopInfo({name:settingsRes.data.shop_name||shopProfile?.shop_name||"",address:settingsRes.data.address||"",phone:settingsRes.data.phone||"",gstin:settingsRes.data.gst_number||""});
       } else if(shopProfile) {
         setShopInfo({name:shopProfile.shop_name||"",address:shopProfile.address||"",phone:shopProfile.phone||"",gstin:shopProfile.gst_number||""});
       }
-
       if(mastersRes.error) setDbError("Error loading medicines: "+mastersRes.error.message);
       else setMasters((mastersRes.data||[]).map(m=>({
         id:m.id,name:m.name,category:m.category||"Tablet",unit:m.unit||"pcs",
         supplier:m.supplier_name||"",minStock:m.min_stock??10,
         sellingRate:m.selling_price??0,purchaseRate:m.purchase_price??0,gstRate:m.gst_rate??0,
       })));
-
-      setLoading(false); // ← Phase 1 done; POS is usable now
-
-      // Phase 2 — background
+      setLoading(false);
       const [salesRes, purchasesRes] = await Promise.all([
         supabase.from("sales").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}),
         supabase.from("purchases").select("*").eq("owner_id",user.id).order("created_at",{ascending:false}),
       ]);
-
       if(salesRes.error) setDbError(p=>p+" | Sales: "+salesRes.error.message);
       else setSales((salesRes.data||[]).map(s=>({
         id:s.id,invoiceNo:s.invoice_no,saleDate:s.sale_date,
@@ -648,7 +627,6 @@ function Dashboard() {
         netTotal:s.net_total??0,notes:s.notes||"",isReturn:s.is_return,
         originalInvoice:s.original_invoice||"",reason:s.reason||"",items:s.items||[],
       })));
-
       if(purchasesRes.error) setDbError(p=>p+" | Purchases: "+purchasesRes.error.message);
       else setPurchases((purchasesRes.data||[]).map(p=>({
         id:p.id,medicineName:p.medicine_name,batchNo:p.batch_no||"",
@@ -656,7 +634,6 @@ function Dashboard() {
         quantity:p.quantity,purchaseRate:p.purchase_rate,
         totalAmount:p.total_amount,notes:p.notes||"",purchaseDate:p.purchase_date,
       })));
-
     } catch(e) {
       setDbError("Connection error: "+e.message);
       setLoading(false);
@@ -665,7 +642,6 @@ function Dashboard() {
 
   useEffect(()=>{load();},[user.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── INVENTORY — memoized, not recalculated on every keystroke ───────────
   const inventory = useMemo(()=>masters.map(m=>{
     const totalIn  =purchases.filter(p=>p.medicineName===m.name).reduce((s,p)=>s+parseFloat(p.quantity||0),0);
     const totalSold=sales.filter(s=>!s.isReturn).reduce((acc,s)=>acc+(s.items||[]).filter(i=>i.medicineName===m.name).reduce((x,i)=>x+parseFloat(i.quantity||0),0),0);
@@ -675,7 +651,6 @@ function Dashboard() {
 
   const getStock=name=>{const inv=inventory.find(i=>i.name===name);return inv?inv.currentStock:0;};
 
-  // ─── CART HELPERS ────────────────────────────────────────────────────────
   const updateCartItem=(idx,field,val)=>{
     setCart(c=>c.map((item,i)=>{
       if(i!==idx) return item;
@@ -691,7 +666,6 @@ function Dashboard() {
     }));
   };
 
-  // ─── SAVE MEDICINE ───────────────────────────────────────────────────────
   const saveMedicine=async()=>{
     if(!mForm.name.trim()){setMErr("Medicine name is required.");return;}
     setMErr("");setSaving(true);
@@ -717,7 +691,6 @@ function Dashboard() {
     if(!error) setMasters(prev=>prev.filter(m=>m.id!==id));
   };
 
-  // ─── SAVE PURCHASE ───────────────────────────────────────────────────────
   const savePurchase=async()=>{
     if(!pForm.purchaseDate||!pForm.medicineName||!pForm.quantity||!pForm.batchNo||!pForm.expiryDate){setPErr("Fill all required fields (Date, Medicine, Qty, Batch, Expiry).");return;}
     setPErr("");setSaving(true);
@@ -730,7 +703,6 @@ function Dashboard() {
     finally{setSaving(false);}
   };
 
-  // ─── SAVE SALE ───────────────────────────────────────────────────────────
   const saveSale=async()=>{
     const validItems=cart.filter(i=>i.medicineName&&parseFloat(i.quantity||0)>0);
     if(validItems.length===0){setSErr("Add at least one medicine to the cart.");return;}
@@ -754,7 +726,6 @@ function Dashboard() {
     finally{setSaving(false);}
   };
 
-  // ─── PROCESS RETURN ──────────────────────────────────────────────────────
   const processReturn=async()=>{
     const orig=sales.find(s=>s.invoiceNo===retForm.invoiceNo&&!s.isReturn);
     if(!orig){setRetErr("Invoice not found.");return;}
@@ -770,7 +741,6 @@ function Dashboard() {
     finally{setSaving(false);}
   };
 
-  // ─── NAV ─────────────────────────────────────────────────────────────────
   const navItems=[
     {id:"dashboard",label:"📊 Dashboard"},
     {id:"pos",      label:"🛒 POS / Sale"},
@@ -804,7 +774,6 @@ function Dashboard() {
 
       <TrialBanner/>
 
-      {/* TOPBAR */}
       <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"10px 20px",
         display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -826,14 +795,10 @@ function Dashboard() {
       </div>
 
       <div style={{display:"flex",minHeight:"calc(100vh - 57px)",position:"relative"}}>
-
-        {/* Sidebar overlay — FIXED: removed display:none that broke it */}
         {sidebarOpen&&(
           <div onClick={()=>setSidebarOpen(false)}
             style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:150}}/>
         )}
-
-        {/* SIDEBAR */}
         <div className={`sidebar${sidebarOpen?" open":""}`}
           style={{width:180,background:"#1e293b",borderRight:"1px solid #334155",padding:"12px 0",flexShrink:0}}>
           {navItems.map(n=>(
@@ -850,10 +815,7 @@ function Dashboard() {
           ))}
         </div>
 
-        {/* MAIN CONTENT */}
         <div className="main-content" style={{flex:1,padding:24,overflowX:"hidden",overflowY:"auto"}}>
-
-          {/* ── DASHBOARD ── */}
           {sheet==="dashboard"&&(
             <div>
               <h2 style={{margin:"0 0 20px",color:"#f1f5f9"}}>📊 Dashboard</h2>
@@ -890,7 +852,6 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ── POS ── */}
           {sheet==="pos"&&(
             <div>
               <h2 style={{margin:"0 0 20px",color:"#f1f5f9"}}>🛒 New Sale</h2>
@@ -943,7 +904,6 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ── MEDICINES ── */}
           {sheet==="medicines"&&(
             <div>
               <h2 style={{margin:"0 0 20px",color:"#f1f5f9"}}>💊 Medicine Master</h2>
@@ -992,7 +952,6 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ── INVENTORY ── */}
           {sheet==="inventory"&&(
             <div>
               <h2 style={{margin:"0 0 20px",color:"#f1f5f9"}}>📦 Current Inventory</h2>
@@ -1019,12 +978,10 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ── PURCHASES ── */}
           {sheet==="purchases"&&(
             <div>
               <h2 style={{margin:"0 0 20px",color:"#f1f5f9"}}>🛍️ Purchase Entry</h2>
               <div style={{background:"#1e293b",borderRadius:12,padding:20,marginBottom:20,border:"1px solid #334155"}}>
-                <h4 style={{margin:"0 0 12px",color:"#94a3b8",fontSize:12,textTransform:"uppercase"}}>Add Purchase (Stock In)</h4>
                 {pErr&&<div style={{background:"#3b0f0f",color:"#f87171",padding:"8px 12px",borderRadius:6,marginBottom:12,fontSize:12}}>{pErr}</div>}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
                   <div><label style={lStyle}>Date *</label><input type="date" style={iStyle} value={pForm.purchaseDate} onChange={e=>setPForm(f=>({...f,purchaseDate:e.target.value}))}/></div>
@@ -1068,7 +1025,6 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ── SALES HISTORY ── */}
           {sheet==="sales"&&(
             <div>
               <h2 style={{margin:"0 0 20px",color:"#f1f5f9"}}>🧾 Sales History</h2>
@@ -1096,12 +1052,10 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ── RETURNS ── */}
           {sheet==="returns"&&(
             <div>
               <h2 style={{margin:"0 0 20px",color:"#f1f5f9"}}>↩️ Returns & Refunds</h2>
               <div style={{background:"#1e293b",borderRadius:12,padding:20,marginBottom:20,border:"1px solid #334155"}}>
-                <h4 style={{margin:"0 0 12px",color:"#94a3b8",fontSize:12,textTransform:"uppercase"}}>Process Return by Invoice</h4>
                 {retErr&&<div style={{background:"#3b0f0f",color:"#f87171",padding:"8px 12px",borderRadius:6,marginBottom:12,fontSize:12}}>{retErr}</div>}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
                   <div>
@@ -1119,7 +1073,6 @@ function Dashboard() {
                 </div>
                 <Btn onClick={processReturn} disabled={saving} danger>↩️ Process Full Return</Btn>
               </div>
-              <h4 style={{margin:"0 0 12px",color:"#94a3b8",fontSize:12,textTransform:"uppercase"}}>Return History</h4>
               <div style={{overflowX:"auto",background:"#1e293b",borderRadius:12,border:"1px solid #334155"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
                   <thead><tr><th style={TH}>Ref</th><th style={TH}>Original Invoice</th><th style={TH}>Date</th><th style={TH}>Amount</th><th style={TH}>Reason</th></tr></thead>
@@ -1141,7 +1094,6 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ── DEFERRED SECTIONS — mount only on first visit ── */}
           <div style={{display:sheet==="expiry"   ?"block":"none"}}>
             {visited.expiry    && <ExpiryTracker purchases={purchases}/>}
           </div>
@@ -1151,7 +1103,6 @@ function Dashboard() {
           <div style={{display:sheet==="analytics"?"block":"none"}}>
             {visited.analytics && <Analytics sales={sales} purchases={purchases}/>}
           </div>
-
         </div>
       </div>
 
@@ -1166,10 +1117,10 @@ function Dashboard() {
 // ═══════════════════════════════════════════════════════════
 function SuperAdminDashboard() {
   const{signOut}=useAuth();
-  const[shops,   setShops]   =useState([]);
-  const[loading, setLoading] =useState(true);
-  const[activeTab,setActiveTab]=useState("shops");
-  const[msg,     setMsg]     =useState("");
+  const[shops,      setShops]    =useState([]);
+  const[loading,    setLoading]  =useState(true);
+  const[activeTab,  setActiveTab]=useState("shops");
+  const[msg,        setMsg]      =useState("");
 
   const loadData=async()=>{
     setLoading(true);
@@ -1273,7 +1224,7 @@ function SuperAdminDashboard() {
                 return(
                   <div key={shop.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #1e293b"}}>
                     <div><div style={{color:"#f1f5f9",fontSize:13,fontWeight:600}}>{shop.shop_name}</div><div style={{color:"#64748b",fontSize:11}}>{shop.shop_email}</div></div>
-                    <div style={{textAlign:"right"}}>{sub?.plan==="paid"?<span style={{color:"#4ade80",fontWeight:700}}>₹999/mo</span>:<span style={{color:"#f59e0b",fontSize:12}}>Trial</span>}</div>
+                    <div style={{textAlign:"right"}}>{sub?.plan==="paid"?<span style={{color:"#4ade80",fontWeight:700}}>₹999/yr</span>:<span style={{color:"#f59e0b",fontSize:12}}>Trial</span>}</div>
                   </div>
                 );
               })}
@@ -1286,17 +1237,46 @@ function SuperAdminDashboard() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ROOT EXPORT
+// ROOT EXPORT — with React Router
 // ═══════════════════════════════════════════════════════════
 export default function App() {
-  const{user,loading,isSuperAdmin,isSubscriptionActive,subscription}=useAuth();
-  if(loading) return(
+  const { user, loading, isSuperAdmin, isSubscriptionActive, subscription } = useAuth();
+
+  if (loading) return (
     <div style={{minHeight:"100vh",background:"#060d1a",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{color:"#38bdf8",fontSize:14}}>⟳ Loading MedStock Pro…</div>
     </div>
   );
-  if(!user)        return <AuthGate/>;
-  if(isSuperAdmin) return <SuperAdminDashboard/>;
-  if(subscription&&!isSubscriptionActive()) return <TrialExpired/>;
-  return <Dashboard/>;
+
+  return (
+    <BrowserRouter>
+      <Routes>
+
+        {/* ── PUBLIC — Homepage ── */}
+        <Route path="/" element={<HomePage />} />
+
+        {/* ── AUTH — Login & Signup ── */}
+        <Route path="/login"
+          element={!user ? <AuthGate mode="login" /> : <Navigate to="/dashboard" replace />}
+        />
+        <Route path="/signup"
+          element={!user ? <AuthGate mode="signup" /> : <Navigate to="/dashboard" replace />}
+        />
+
+        {/* ── PROTECTED — Dashboard ── */}
+        <Route path="/dashboard"
+          element={
+            !user                                      ? <Navigate to="/login" replace /> :
+            isSuperAdmin                               ? <SuperAdminDashboard /> :
+            subscription && !isSubscriptionActive()    ? <TrialExpired /> :
+                                                         <Dashboard />
+          }
+        />
+
+        {/* ── FALLBACK ── */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+
+      </Routes>
+    </BrowserRouter>
+  );
 }
