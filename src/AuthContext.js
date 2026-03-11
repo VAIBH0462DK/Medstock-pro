@@ -1,201 +1,133 @@
-import { createContext, useContext, useEffect, useState, useRef } from "react";
+// src/AuthContext.js
+import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 
 const AuthContext = createContext({});
 
 export function AuthProvider({ children }) {
-
-  const [user, setUser] = useState(null);
-  const [shopProfile, setShopProfile] = useState(null);
+  const [user,         setUser]         = useState(null);
+  const [session,      setSession]      = useState(null);
+  const [shopProfile,  setShopProfile]  = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading,      setLoading]      = useState(true);
 
-  const mountedRef = useRef(true);
-
-  // LOAD USER RELATED DATA
   const loadUserData = async (userId) => {
+    try {
+      const { data: shop } = await supabase
+        .from("shop_profiles")
+        .select("*")
+        .eq("owner_id", userId)
+        .maybeSingle();
+      setShopProfile(shop || null);
+    } catch { /* non-fatal */ }
 
     try {
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("owner_id", userId)
+        .maybeSingle();
+      setSubscription(sub || null);
+    } catch { /* non-fatal */ }
 
-      const [shopRes, subRes, saRes] = await Promise.allSettled([
-        supabase.from("shop_profiles").select("*").eq("owner_id", userId).maybeSingle(),
-        supabase.from("subscriptions").select("*").eq("owner_id", userId).maybeSingle(),
-        supabase.from("super_admins").select("user_id").eq("user_id", userId).maybeSingle(),
-      ]);
-
-      if (!mountedRef.current) return;
-
-      setShopProfile(
-        shopRes.status === "fulfilled" ? shopRes.value.data || null : null
-      );
-
-      setSubscription(
-        subRes.status === "fulfilled" ? subRes.value.data || null : null
-      );
-
-      setIsSuperAdmin(
-        saRes.status === "fulfilled" ? !!saRes.value.data : false
-      );
-
-    } catch (err) {
-      console.error("User data load error:", err);
-    }
-
+    try {
+      const { data: sa } = await supabase
+        .from("super_admins")
+        .select("user_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+      setIsSuperAdmin(!!sa);
+    } catch { /* non-fatal */ }
   };
 
   useEffect(() => {
+    // Add a 10 second timeout — if Supabase doesn't respond, show login anyway
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 10000);
 
-    mountedRef.current = true;
-
-    let authListener = null;
-
-    const initializeAuth = async () => {
-
-      try {
-
-        const { data } = await supabase.auth.getSession();
-        const session = data?.session;
-
-        if (!mountedRef.current) return;
-
-        if (session?.user) {
-          setUser(session.user);
-          await loadUserData(session.user.id);
-        }
-
-      } catch (err) {
-        console.error("Auth init error:", err);
-      } finally {
-
-        if (mountedRef.current) {
-          setLoading(false);
-        }
-
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(timeout);
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        loadUserData(session.user.id).finally(() => setLoading(false));
+      } else {
+        setLoading(false);
       }
+    }).catch(() => {
+      clearTimeout(timeout);
+      setLoading(false);
+    });
 
-      const { data: listener } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-
-          if (!mountedRef.current) return;
-
-          if (event === "SIGNED_IN" && session?.user) {
-
-            setUser(session.user);
-            await loadUserData(session.user.id);
-
-          }
-
-          if (event === "SIGNED_OUT") {
-
-            setUser(null);
-            setShopProfile(null);
-            setSubscription(null);
-            setIsSuperAdmin(false);
-
-          }
-
+    const { data: { subscription: listener } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          await loadUserData(session.user.id);
+        } else {
+          setShopProfile(null);
+          setSubscription(null);
+          setIsSuperAdmin(false);
         }
-      );
-
-      authListener = listener;
-
-    };
-
-    initializeAuth();
+        setLoading(false);
+      }
+    );
 
     return () => {
-
-      mountedRef.current = false;
-
-      if (authListener?.subscription) {
-        authListener.subscription.unsubscribe();
-      }
-
+      clearTimeout(timeout);
+      listener.unsubscribe();
     };
-
-  }, []);
-
-  // SUBSCRIPTION HELPERS
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isSubscriptionActive = () => {
-
-    if (!subscription) return true;
-
-    if (subscription.status !== "active") return false;
-
+    if (!subscription) return true;                        // no sub data yet → allow in
+    if (subscription.status !== "active") return false;   // suspended / cancelled
+    if (subscription.plan === "paid") {
+      // paid: valid as long as current_period_end is in future
+      if (subscription.current_period_end) {
+        return new Date(subscription.current_period_end) > new Date();
+      }
+      return true; // no end date set → treat as active
+    }
     if (subscription.plan === "trial") {
       return new Date(subscription.trial_end) > new Date();
     }
-
-    if (subscription.current_period_end) {
-      return new Date(subscription.current_period_end) > new Date();
-    }
-
     return true;
-
   };
 
   const trialDaysLeft = () => {
-
     if (!subscription?.trial_end) return 30;
-
-    return Math.ceil(
-      (new Date(subscription.trial_end) - new Date()) /
-      (1000 * 60 * 60 * 24)
-    );
-
+    const diff = new Date(subscription.trial_end) - new Date();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
 
-  // LOGOUT (mobile safe)
-
   const signOut = async () => {
-
-    try {
-
-      await supabase.auth.signOut();
-
-      localStorage.clear();
-      sessionStorage.clear();
-
-    } catch (err) {
-      console.error("Logout error:", err);
-    }
-
-    window.location.replace("/");
-
+    await supabase.auth.signOut();
   };
 
   const refreshUserData = () => {
-
-    if (user) {
-      loadUserData(user.id);
-    }
-
+    if (user) loadUserData(user.id);
   };
 
   return (
-
-    <AuthContext.Provider
-      value={{
-        user,
-        shopProfile,
-        subscription,
-        isSuperAdmin,
-        loading,
-        isSubscriptionActive,
-        trialDaysLeft,
-        signOut,
-        refreshUserData,
-      }}
-    >
-
+    <AuthContext.Provider value={{
+      user,
+      session,
+      shopProfile,
+      subscription,
+      isSuperAdmin,
+      loading,
+      isSubscriptionActive,
+      trialDaysLeft,
+      signOut,
+      refreshUserData,
+    }}>
       {children}
-
     </AuthContext.Provider>
-
   );
-
 }
 
 export const useAuth = () => useContext(AuthContext);
