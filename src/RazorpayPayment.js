@@ -16,7 +16,7 @@ import { useAuth } from "./AuthContext";
 // 🔑 PASTE YOUR RAZORPAY KEY ID HERE
 // Get it from: https://dashboard.razorpay.com → Settings → API Keys
 // ──────────────────────────────────────────
-const RAZORPAY_KEY_ID = rzp_test_SPrdk2NokVnlEF // ← Replace this
+const RAZORPAY_KEY_ID ="rzp_test_SPrdk2NokVnlEF" // ← Replace this
 
 // ──────────────────────────────────────────
 // 💰 YOUR PRICING
