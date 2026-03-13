@@ -16,8 +16,7 @@ import { useAuth } from "./AuthContext";
 // 🔑 PASTE YOUR RAZORPAY KEY ID HERE
 // Get it from: https://dashboard.razorpay.com → Settings → API Keys
 // ──────────────────────────────────────────
-const RAZORPAY_KEY_ID ="rzp_test_SPrdk2NokVnlEF" // ← Replace this
-
+const RAZORPAY_KEY_ID = "rzp_live_SPrQssFt3DT7KD";
 // ──────────────────────────────────────────
 // 💰 YOUR PRICING
 // ──────────────────────────────────────────
@@ -67,7 +66,6 @@ export function PricingPage() {
     }
 
     const isAnnual  = selectedPlan === "annual";
-    const amount    = isAnnual ? ANNUAL_PRICE_PAISE  : MONTHLY_PRICE_PAISE;
     const amountINR = isAnnual ? ANNUAL_PRICE_INR    : MONTHLY_PRICE_INR;
     const planLabel = isAnnual
       ? "MedStock Pro — Annual Plan (₹999/year)"
@@ -124,9 +122,9 @@ export function PricingPage() {
       const now = new Date();
       const periodEnd = new Date(now);
       if (plan === "annual") {
-        periodEnd.setFullYear(periodEnd.getFullYear() + 1); // valid 1 year
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
       } else {
-        periodEnd.setMonth(periodEnd.getMonth() + 1);       // valid 1 month
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
       }
 
       const { error: updateError } = await supabase

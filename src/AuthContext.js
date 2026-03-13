@@ -12,67 +12,90 @@ export function AuthProvider({ children }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading,      setLoading]      = useState(true);
 
+  const clearUserState = () => {
+    setUser(null);
+    setSession(null);
+    setShopProfile(null);
+    setSubscription(null);
+    setIsSuperAdmin(false);
+  };
+
+  // ✅ Returns ALL data together — no partial state updates
   const loadUserData = async (userId) => {
+    let shop = null, sub = null, sa = null;
+
     try {
-      const { data: shop } = await supabase
+      const { data } = await supabase
         .from("shop_profiles")
         .select("*")
         .eq("owner_id", userId)
         .maybeSingle();
-      setShopProfile(shop || null);
+      shop = data || null;
     } catch { /* non-fatal */ }
 
     try {
-      const { data: sub } = await supabase
+      const { data } = await supabase
         .from("subscriptions")
         .select("*")
         .eq("owner_id", userId)
         .maybeSingle();
-      setSubscription(sub || null);
+      sub = data || null;
     } catch { /* non-fatal */ }
 
     try {
-      const { data: sa } = await supabase
+      const { data } = await supabase
         .from("super_admins")
         .select("user_id")
         .eq("user_id", userId)
         .maybeSingle();
-      setIsSuperAdmin(!!sa);
+      sa = data || null;
     } catch { /* non-fatal */ }
+
+    // ✅ Set ALL state together after all queries finish
+    // This prevents race condition where isSuperAdmin is still false
+    // when AppRoutes renders
+    setShopProfile(shop);
+    setSubscription(sub);
+    setIsSuperAdmin(!!sa);
   };
 
   useEffect(() => {
-    // Add a 10 second timeout — if Supabase doesn't respond, show login anyway
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 10000);
+    const timeout = setTimeout(() => setLoading(false), 10000);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       clearTimeout(timeout);
-      setSession(session);
-      setUser(session?.user ?? null);
       if (session?.user) {
-        loadUserData(session.user.id).finally(() => setLoading(false));
+        setSession(session);
+        setUser(session.user);
+        // ✅ Wait for ALL data before setting loading=false
+        await loadUserData(session.user.id);
+        setLoading(false);
       } else {
+        clearUserState();
         setLoading(false);
       }
-    }).catch(() => {
+    }).catch((err) => {
       clearTimeout(timeout);
+      if (err?.name === "AbortError" || err?.message?.includes("Lock")) {
+        clearUserState();
+      }
       setLoading(false);
     });
 
     const { data: { subscription: listener } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await loadUserData(session.user.id);
-        } else {
-          setShopProfile(null);
-          setSubscription(null);
-          setIsSuperAdmin(false);
+      async (event, session) => {
+        if (event === "SIGNED_OUT" || !session) {
+          clearUserState();
+          setLoading(false);
+          return;
         }
-        setLoading(false);
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+          setSession(session);
+          setUser(session.user);
+          // ✅ Wait for ALL data before setting loading=false
+          await loadUserData(session.user.id);
+          setLoading(false);
+        }
       }
     );
 
@@ -83,14 +106,13 @@ export function AuthProvider({ children }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isSubscriptionActive = () => {
-    if (!subscription) return true;                        // no sub data yet → allow in
-    if (subscription.status !== "active") return false;   // suspended / cancelled
+    if (!subscription) return true;
+    if (subscription.status !== "active") return false;
     if (subscription.plan === "paid") {
-      // paid: valid as long as current_period_end is in future
       if (subscription.current_period_end) {
         return new Date(subscription.current_period_end) > new Date();
       }
-      return true; // no end date set → treat as active
+      return true;
     }
     if (subscription.plan === "trial") {
       return new Date(subscription.trial_end) > new Date();
@@ -105,6 +127,7 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
+    clearUserState();
     await supabase.auth.signOut();
   };
 

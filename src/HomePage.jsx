@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 
 // ─── REAL APP DATA (from App.js) ───────────────────────────
 const FEATURES = [
@@ -122,21 +123,16 @@ function Logo({ size = 36 }) {
 function Counter({ target, suffix = "", prefix = "" }) {
   const [val, setVal] = useState(0);
   const ref = useRef();
-  const started = useRef(false);
   useEffect(() => {
     const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting && !started.current) {
-        started.current = true;
-        const end = parseFloat(target);
-        const dur = 1600;
-        const t0 = performance.now();
-        const tick = (now) => {
-          const p = Math.min((now - t0) / dur, 1);
-          const ease = 1 - Math.pow(1 - p, 3);
-          setVal((ease * end).toFixed(end % 1 !== 0 ? 1 : 0));
-          if (p < 1) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
+      if (e.isIntersecting) {
+        let start = 0;
+        const step = Math.ceil(target / 60);
+        const t = setInterval(() => {
+          start += step;
+          if (start >= target) { setVal(target); clearInterval(t); }
+          else setVal(start);
+        }, 16);
       }
     }, { threshold: 0.5 });
     if (ref.current) obs.observe(ref.current);
@@ -317,8 +313,8 @@ export default function HomePage() {
 
           {/* CTA */}
           <div className="desktop-nav" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <a href="/login" className="btn-outline" style={{ padding: "9px 20px", fontSize: "0.88rem" }}>Login</a>
-            <a href="/signup" className="btn-primary" style={{ padding: "9px 22px", fontSize: "0.88rem" }}>Start Free Trial</a>
+            <Link to="/login" className="btn-outline" style={{ padding: "9px 20px", fontSize: "0.88rem" }}>Login</Link>
+            <Link to="/signup" className="btn-primary" style={{ padding: "9px 22px", fontSize: "0.88rem" }}>Start Free Trial</Link>
           </div>
 
           {/* Mobile Hamburger */}
@@ -332,8 +328,8 @@ export default function HomePage() {
           <div style={{ background: "#fff", borderTop: "1px solid var(--border)", padding: "16px 5%", display: "flex", flexDirection: "column", gap: 8 }}>
             {NAV.map(n => <button key={n.id} className="btn-ghost" onClick={() => scrollTo(n.id)} style={{ textAlign: "left", fontSize: "1rem" }}>{n.label}</button>)}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-              <a href="/login" className="btn-outline" style={{ flex: 1, justifyContent: "center", fontSize: "0.9rem" }}>Login</a>
-              <a href="/signup" className="btn-primary" style={{ flex: 1, justifyContent: "center", fontSize: "0.9rem" }}>Free Trial</a>
+              <Link to="/login" className="btn-outline" style={{ flex: 1, justifyContent: "center", fontSize: "0.9rem" }}>Login</Link>
+              <Link to="/signup" className="btn-primary" style={{ flex: 1, justifyContent: "center", fontSize: "0.9rem" }}>Free Trial</Link>
             </div>
           </div>
         )}
@@ -375,9 +371,9 @@ export default function HomePage() {
                 MedStock Pro ek simple inventory software hai chhoti pharmacies ke liye — billing, stock tracking, expiry alerts, GST invoices, aur analytics sab kuch ek dashboard mein.
               </p>
               <div className="mob-stack" style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 28, flexWrap: "wrap" }}>
-                <a href="/signup" className="btn-primary" style={{ fontSize: "1rem", padding: "14px 32px" }}>
+                <Link to="/signup" className="btn-primary" style={{ fontSize: "1rem", padding: "14px 32px" }}>
                   30 Din Free Try Karein →
-                </a>
+                </Link>
                 <button className="btn-outline" onClick={() => scrollTo("features")} style={{ fontSize: "1rem" }}>
                   Features Dekhein
                 </button>
@@ -529,7 +525,7 @@ export default function HomePage() {
           <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 40, flexWrap: "wrap" }}>
             {HOW_STEPS.map((s, i) => (
               <button key={i} onClick={() => setActiveStep(i)} style={{
-                padding: "10px 22px", borderRadius: 50, border: "none",
+                padding: "10px 22px", borderRadius: 50,
                 background: activeStep === i ? "var(--blue)" : "#fff",
                 color: activeStep === i ? "#fff" : "#64748b",
                 fontWeight: 700, fontSize: "0.88rem", cursor: "pointer",
@@ -612,7 +608,7 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
-                <a href="/signup" className="btn-outline" style={{ width: "100%", justifyContent: "center", display: "flex" }}>Start Free Trial</a>
+                <Link to="/signup" className="btn-outline" style={{ width: "100%", justifyContent: "center", display: "flex" }}>Start Free Trial</Link>
               </div>
             </Reveal>
 
@@ -644,9 +640,9 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
-                <a href="/signup" className="btn-primary" style={{ width: "100%", justifyContent: "center", display: "flex" }}>
+                <Link to="/signup" className="btn-primary" style={{ width: "100%", justifyContent: "center", display: "flex" }}>
                   {annual ? "Get Annual Plan →" : "Subscribe Monthly →"}
-                </a>
+                </Link>
                 {annual && <div style={{ textAlign: "center", fontSize: "0.78rem", color: "#059669", fontWeight: 700, marginTop: 10 }}>✓ Save ₹789 vs monthly billing</div>}
               </div>
             </Reveal>
@@ -674,9 +670,9 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
-                <a href="/signup" style={{ width: "100%", justifyContent: "center", display: "flex", background: "#38bdf8", color: "#0c1a2e", border: "none", padding: "13px 28px", borderRadius: 10, fontSize: "0.97rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textDecoration: "none", textAlign: "center" }}>
+                <Link to="/signup" style={{ width: "100%", justifyContent: "center", display: "flex", background: "#38bdf8", color: "#0c1a2e", border: "none", padding: "13px 28px", borderRadius: 10, fontSize: "0.97rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textDecoration: "none", textAlign: "center" }}>
                   Get Annual Plan →
-                </a>
+                </Link>
               </div>
             </Reveal>
           </div>
@@ -730,9 +726,9 @@ export default function HomePage() {
               <p style={{ fontSize: "0.95rem", color: "#475569", lineHeight: 1.65 }}>
                 Abhi early stage mein hain — <strong style={{ color: "#0c1a2e" }}>pehle users mein se ek bano</strong> aur apni pharmacy ka workflow completely badlo.
               </p>
-              <a href="/signup" className="btn-primary" style={{ marginTop: 18, justifyContent: "center", display: "inline-flex" }}>
+              <Link to="/signup" className="btn-primary" style={{ marginTop: 18, justifyContent: "center", display: "inline-flex" }}>
                 Free Trial Shuru Karein
-              </a>
+              </Link>
             </div>
           </Reveal>
         </div>
@@ -772,14 +768,14 @@ export default function HomePage() {
               30 din free. No credit card. Koi commitment nahi. Bas signup karo aur aaj se hi stock track karna shuru karo.
             </p>
             <div className="mob-stack" style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
-              <a href="/signup" style={{ background: "#fff", color: "var(--blue)", border: "none", padding: "14px 36px", borderRadius: 10, fontSize: "1rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textDecoration: "none", transition: "all 0.2s", display: "inline-flex", alignItems: "center", gap: 8 }}
+              <Link to="/signup" style={{ background: "#fff", color: "var(--blue)", border: "none", padding: "14px 36px", borderRadius: 10, fontSize: "1rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textDecoration: "none", transition: "all 0.2s", display: "inline-flex", alignItems: "center", gap: 8 }}
                 onMouseOver={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.2)"; }}
                 onMouseOut={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
                 30 Din Free Trial Shuru Karein →
-              </a>
-              <a href="/login" style={{ background: "transparent", color: "#fff", border: "2px solid rgba(255,255,255,0.5)", padding: "13px 28px", borderRadius: 10, fontSize: "1rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+              </Link>
+              <Link to="/login" style={{ background: "transparent", color: "#fff", border: "2px solid rgba(255,255,255,0.5)", padding: "13px 28px", borderRadius: 10, fontSize: "1rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
                 Login Karein
-              </a>
+              </Link>
             </div>
             <p style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.5)", marginTop: 18 }}>
               ✓ Free 30 days &nbsp;·&nbsp; ✓ No card needed &nbsp;·&nbsp; ✓ Cancel anytime
@@ -812,7 +808,7 @@ export default function HomePage() {
                   { label: "𝕏", href: "https://x.com", tip: "Twitter / X" },
                   { label: "in", href: "https://linkedin.com", tip: "LinkedIn" },
                 ].map(s => (
-                  <a key={s.label} href={s.href} title={s.tip} style={{ width: 36, height: 36, borderRadius: 8, background: "#1e293b", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: "0.85rem", fontWeight: 800, textDecoration: "none", transition: "all 0.2s" }}
+                  <a key={s.label} href={s.href} title={s.tip} target="_blank" rel="noreferrer" style={{ width: 36, height: 36, borderRadius: 8, background: "#1e293b", border: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: "0.85rem", fontWeight: 800, textDecoration: "none", transition: "all 0.2s" }}
                     onMouseOver={e => { e.currentTarget.style.background = "#0ea5e9"; e.currentTarget.style.color = "#fff"; }}
                     onMouseOut={e => { e.currentTarget.style.background = "#1e293b"; e.currentTarget.style.color = "#64748b"; }}>
                     {s.label}
@@ -825,9 +821,9 @@ export default function HomePage() {
             <div>
               <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#f1f5f9", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 18 }}>App</div>
               {[["Login", "/login"], ["Sign Up", "/signup"], ["Dashboard", "/dashboard"]].map(([l, h]) => (
-                <a key={l} href={h} style={{ display: "block", fontSize: "0.88rem", color: "#475569", marginBottom: 12, textDecoration: "none", transition: "color 0.2s" }}
+                <Link key={l} to={h} style={{ display: "block", fontSize: "0.88rem", color: "#475569", marginBottom: 12, textDecoration: "none", transition: "color 0.2s" }}
                   onMouseOver={e => e.target.style.color = "#38bdf8"}
-                  onMouseOut={e => e.target.style.color = "#475569"}>{l}</a>
+                  onMouseOut={e => e.target.style.color = "#475569"}>{l}</Link>
               ))}
             </div>
 
