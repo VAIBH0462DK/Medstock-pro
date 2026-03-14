@@ -1248,7 +1248,7 @@ function loadRazorpayScript() {
   });
 }
 
-const RAZORPAY_KEY_ID      = "rzp_test_SPrdk2NokVnlEF"; // ← replace with your key
+const RAZORPAY_KEY_ID      = "rzp_live_SPrQssFt3DT7KD"; // ← replace with your key
 const MONTHLY_PRICE_PAISE  = 14900;
 const MONTHLY_PRICE_INR    = 149;
 const ANNUAL_PRICE_PAISE   = 99900;
