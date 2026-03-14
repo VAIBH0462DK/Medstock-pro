@@ -639,6 +639,9 @@ function Dashboard({ onSignOut }) {
   };
 
   useEffect(()=>{load();},[user.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ✅ Reload data when subscription becomes paid (after Razorpay payment)
+  const { subscription: currentSub } = useAuth();
+  useEffect(()=>{ if(currentSub?.plan === "paid") load(); },[currentSub?.plan]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const inventory = useMemo(()=>masters.map(m=>{
     const totalIn  =purchases.filter(p=>p.medicineName===m.name).reduce((s,p)=>s+parseFloat(p.quantity||0),0);
@@ -1248,7 +1251,7 @@ function loadRazorpayScript() {
   });
 }
 
-const RAZORPAY_KEY_ID      = "rzp_live_SPrQssFt3DT7KD"; // ← replace with your key
+const RAZORPAY_KEY_ID      = "rzp_test_SPrdk2NokVnlEF"; // ← replace with your key
 const MONTHLY_PRICE_PAISE  = 14900;
 const MONTHLY_PRICE_INR    = 149;
 const ANNUAL_PRICE_PAISE   = 99900;
@@ -1341,25 +1344,72 @@ function PricingPage() {
 
   const activateSubscription = async (paymentId, plan, amountINR) => {
     try {
-      const now = new Date(); const periodEnd = new Date(now);
+      const now = new Date(); 
+      const periodEnd = new Date(now);
       if (plan === "annual") periodEnd.setFullYear(periodEnd.getFullYear()+1);
       else periodEnd.setMonth(periodEnd.getMonth()+1);
-      const { error: updateError } = await supabase.from("subscriptions").update({
-        plan: "paid", status: "active", razorpay_payment_id: paymentId,
-        current_period_start: now.toISOString(), current_period_end: periodEnd.toISOString(),
-        updated_at: now.toISOString(),
-      }).eq("owner_id", user.id);
-      if (updateError) { setError("Payment received ✅ but activation failed. Payment ID: "+paymentId); setPaying(false); return; }
+
+      // ✅ Log user.id to confirm correct user
+      console.log("Activating subscription for user:", user?.id);
+
+      const { data: updateData, error: updateError } = await supabase
+        .from("subscriptions")
+        .update({
+          plan:                 "paid",
+          status:               "active",
+          razorpay_payment_id:  paymentId,
+          current_period_start: now.toISOString(),
+          current_period_end:   periodEnd.toISOString(),
+          updated_at:           now.toISOString(),
+        })
+        .eq("owner_id", user.id)
+        .select(); // ✅ .select() returns updated rows — confirms update worked
+
+      console.log("Update result:", updateData, "Error:", updateError);
+
+      if (updateError) {
+        setError("Payment received ✅ but activation failed. Payment ID: " + paymentId + " | Error: " + updateError.message);
+        setPaying(false);
+        return;
+      }
+
+      // ✅ Check if any row was actually updated
+      if (!updateData || updateData.length === 0) {
+        setError("Payment received ✅ but no subscription row found. Payment ID: " + paymentId + ". Contact support.");
+        setPaying(false);
+        return;
+      }
+
+      // Log payment (non-fatal)
       await supabase.from("payment_logs").insert({
-        owner_id: user.id, shop_id: shopProfile?.id, payment_id: paymentId,
-        amount: amountINR, plan, status: "success",
+        owner_id:   user.id,
+        shop_id:    shopProfile?.id,
+        payment_id: paymentId,
+        amount:     amountINR,
+        plan:       plan,
+        status:     "success",
       }).then(()=>{}).catch(()=>{});
-      setSuccess(true); setPaying(false); refreshUserData();
-    } catch(e) { setError("Activation error: "+e.message); setPaying(false); }
+
+      setPaying(false);
+      await refreshUserData();
+      setSuccess(true);
+
+    } catch(e) { 
+      console.error("activateSubscription error:", e);
+      setError("Activation error: " + e.message); 
+      setPaying(false); 
+    }
   };
 
+  // ✅ useEffect for navigation — not setTimeout in render body
+  useEffect(() => {
+    if (success) {
+      const t = setTimeout(() => navigate("/dashboard", { replace: true }), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [success, navigate]);
+
   if (success) {
-    setTimeout(() => navigate("/dashboard"), 2000);
     return (
       <div style={{minHeight:"100vh",background:"#060d1a",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div style={{background:"#1e293b",borderRadius:20,padding:28,maxWidth:460,width:"100%",border:"2px solid #059669",textAlign:"center"}}>
